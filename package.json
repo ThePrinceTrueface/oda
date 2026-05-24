@@ -1,0 +1,40 @@
+{
+  "name": "oda",
+  "version": "1.0.0",
+  "description": "A lightweight, type-safe, and offline-ready HTTP client",
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/types/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "node esbuild.js --watch",
+    "build": "node esbuild.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "release": "release-it"
+  },
+  "keywords": [
+    "http",
+    "client",
+    "offline",
+    "typescript",
+    "fetch"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "release-it": "^20.0.1",
+    "typescript": "^5.4.5",
+    "vitest": "^4.1.7"
+  }
+}

@@ -1,0 +1,6 @@
+src
+tsconfig.json
+esbuild.js
+.release-it.json
+.editorconfig
+.gitignore
