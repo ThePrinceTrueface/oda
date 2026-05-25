@@ -1,6 +1,6 @@
 {
   "name": "oda",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A lightweight TypeScript HTTP client built around scoped, derivable clients. Swap the engine for any JS runtime, queue requests offline and replay them on reconnect.",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
