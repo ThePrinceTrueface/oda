@@ -16,6 +16,7 @@
 - [Client Configuration](#-client-configuration)
   - [Initialization](#initialization)
   - [Derived Clients](#derived-clients)
+- [Scope Management](#-scope-management)
 - [Custom Engines](#-custom-engines)
 - [API Reference](#-api-reference)
   - [Interfaces](#interfaces)
@@ -184,6 +185,30 @@ oda.setEngine(axiosEngine);
 | Property | Type | Description |
 | :--- | :--- | :--- |
 | `query` | `Record<string, any>` | Query parameters to append to the URL. |
+| `headers` | `Record<string, string>` | Custom HTTP headers. |
+| `auth` | `{ jwt?: string }` | Convenience helper for Bearer tokens. |
+| `config` | `OdaConfig` | Per-request configuration (timeout, offline, signal). |
+
+#### `OdaConfig`
+- `timeout`: Override client timeout for this request (0 to disable).
+- `offline`: Boolean. If true, allows enqueuing if offline.
+- `signal`: An `AbortSignal` to cancel the request manually.
+
+### Error Classes
+- `OdaHttpError`: Thrown for non-2xx responses. Contains `status`, `statusText`, and `body`.
+- `OdaTimeoutError`: Thrown when the request exceeds the configured time.
+- `OdaQueueError`: Thrown if you try to access `.data()` on a queued response.
+
+---
+
+## 👨‍💻 Author
+
+Developed by **The Prince True-face** as part of the **ebinasoft** organization.
+
+## 📜 License
+
+ISC
+ng, any>` | Query parameters to append to the URL. |
 | `headers` | `Record<string, string>` | Custom HTTP headers. |
 | `auth` | `{ jwt?: string }` | Convenience helper for Bearer tokens. |
 | `config` | `OdaConfig` | Per-request configuration (timeout, offline, signal). |
