@@ -16,6 +16,16 @@ export type OdaConfig = {
   offline?: boolean;
   /** AbortSignal to cancel the request manually. */
   signal?: AbortSignal | null;
+  /**
+   * When true, allows the request to target a URL outside the client's baseURL scope.
+   * Use sparingly — prefer a dedicated client for out-of-scope domains.
+   * Every usage is intentional and grep-able: `bypassScope: true`.
+   *
+   * @example
+   * // Uploading to a signed S3 URL returned by the API
+   * apiClient.post(uploadUrl, { body: file }, { config: { bypassScope: true } });
+   */
+  bypassScope?: boolean;
 };
 
 /** Options accepted by every HTTP method. */
@@ -41,4 +51,15 @@ export type OdaClientOptions = {
    * Override per-client to target a specific runtime (Node, Bun, Deno…).
    */
   engine?: import("./engine").OdaEngine;
+  /**
+   * When false, disables scope enforcement for all requests on this client.
+   * Defaults to true — all requests must stay within the client's baseURL.
+   *
+   * @example
+   * // Client that may call any domain (e.g. a CDN proxy client)
+   * const cdnClient = oda.http.client("https://cdn.example.com", {
+   *   scopeCheck: false,
+   * });
+   */
+  scopeCheck?: boolean;
 };

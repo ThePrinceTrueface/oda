@@ -29,3 +29,18 @@ export class OdaQueueError extends Error {
     this.name = "OdaQueueError";
   }
 }
+
+/** Thrown when a request URL falls outside the client's allowed baseURL scope. */
+export class OdaScopeError extends Error {
+  constructor(
+    public readonly url: string,
+    public readonly scope: string,
+  ) {
+    super(
+      `Request to "${url}" is outside the allowed scope "${scope}". ` +
+        `Use { config: { bypassScope: true } } to opt out explicitly, ` +
+        `or create a dedicated client for this domain.`,
+    );
+    this.name = "OdaScopeError";
+  }
+}

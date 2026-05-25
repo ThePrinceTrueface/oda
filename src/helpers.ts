@@ -1,5 +1,5 @@
 import { OdaEngineResponse } from "./engine";
-import { OdaTimeoutError } from "./errors";
+import { OdaScopeError, OdaTimeoutError } from "./errors";
 import { OdaClientOptions, QueryParams } from "./types";
 
 export function buildQueryURL(url: string, query: QueryParams): string {
@@ -46,6 +46,15 @@ export function resolveURL(base: string, path: string): string {
   return `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
 }
 
+/**
+ * Asserts a resolved URL stays within the client's baseURL scope.
+ */
+export function assertScope(resolvedURL: string, scope: string): void {
+  if (!resolvedURL.startsWith(scope)) {
+    throw new OdaScopeError(resolvedURL, scope);
+  }
+}
+
 export function mergeOptions(
   parent: OdaClientOptions,
   child: OdaClientOptions,
@@ -54,5 +63,6 @@ export function mergeOptions(
     defaultTimeout: child.defaultTimeout ?? parent.defaultTimeout,
     offlineQueue: child.offlineQueue ?? parent.offlineQueue,
     engine: child.engine ?? parent.engine,
+    scopeCheck: child.scopeCheck ?? parent.scopeCheck ?? true,
   };
 }

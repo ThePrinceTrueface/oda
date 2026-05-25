@@ -1,6 +1,6 @@
 import { getGlobalEngine, OdaEngine, OdaEngineRequest, OdaEngineResponse } from "./engine";
 import { OdaHttpError, OdaTimeoutError } from "./errors";
-import { buildQueryURL, mergeHeaders, mergeOptions, resolveURL, withTimeout } from "./helpers";
+import { assertScope, buildQueryURL, mergeHeaders, mergeOptions, resolveURL, withTimeout } from "./helpers";
 import { OdaOfflineQueue } from "./offline/queue";
 import { OdaResponse } from "./response";
 import { BodyPayload, OdaBodyRequestOptions, OdaClientOptions, OdaRequestOptions } from "./types";
@@ -64,6 +64,12 @@ export class OdaHttpClient {
     const fullURL = query
       ? buildQueryURL(resolveURL(this.baseURL, path), query)
       : resolveURL(this.baseURL, path);
+
+    // Scope check — enforced by default, bypassed only when explicitly opted out
+    const scopeEnabled = this.options.scopeCheck ?? true;
+    if (scopeEnabled && !config.bypassScope) {
+      assertScope(fullURL, this.baseURL);
+    }
 
     const effectiveTimeout =
       config.timeout !== undefined

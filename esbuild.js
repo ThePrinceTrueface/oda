@@ -15,6 +15,7 @@ async function runBuild() {
   const buildOptions = {
     entryPoints: ['src/index.ts'],
     bundle: true,
+
     minify: !isWatch,
     sourcemap: true,
     format: 'esm',
@@ -29,7 +30,7 @@ async function runBuild() {
     console.log('👀 Watching for changes...');
   } else {
     await build(buildOptions);
-    
+
     // Génération des types TypeScript uniquement en mode build
     console.log('📝 Generating types...');
     try {
@@ -37,7 +38,7 @@ async function runBuild() {
     } catch (e) {
       console.error('❌ Type generation failed');
     }
-    
+
     console.log('✅ Build complete!');
   }
 }
