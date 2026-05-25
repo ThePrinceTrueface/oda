@@ -1,6 +1,17 @@
+# Source and Config
 src
 tsconfig.json
 esbuild.js
 .release-it.json
 .editorconfig
 .gitignore
+.github
+tests
+examples
+
+# From .gitignore (except dist)
+node_modules
+.DS_Store
+*.log
+.pnpm-debug.log
+*.local*
