@@ -1,7 +1,3 @@
-Voici les aspects sécurité pertinents pour une lib HTTP, classés par priorité.
-
----
-
 **1. Sanitisation des headers — Header Injection**
 
 Un header mal sanitisé peut injecter des sauts de ligne et forger de faux headers HTTP.
@@ -137,5 +133,3 @@ export class OdaSecurityError extends Error {
 | 4 | Sensitive header redaction | 🟡 moyenne | si logging futur |
 | 5 | Body size limit | 🟠 basse | cas limites |
 | 6 | `OdaSecurityError` | 🔴 haute | socle pour tout le reste |
-
-Je recommande de commencer par **1, 2 et 6** — ce sont les plus impactants et les plus simples à implémenter. On attaque lesquels ?

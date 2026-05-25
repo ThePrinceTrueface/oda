@@ -1,7 +1,3 @@
-Voici mes propositions.
-
----
-
 **1. Intercepteurs**
 
 Le pattern le plus demandé après la base. Permet d'injecter de la logique avant/après chaque requête sans répéter du code dans chaque appel.
@@ -121,5 +117,3 @@ for await (const page of pages) {
 ```
 
 ---
-
-Lesquelles t'intéressent ?
