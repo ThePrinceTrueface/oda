@@ -1,8 +1,6 @@
 # oda 🌊
 
-A lightweight, type-safe, and offline-ready HTTP client for modern TypeScript applications.
-
-`oda` is built for developers who want **predictable** HTTP interactions. By using a Result-style response pattern, it eliminates the chaos of global `try/catch` and makes error handling part of your natural workflow.
+**oda** is a lightweight TypeScript HTTP client built around scoped, derivable clients. Swap the engine for any JS runtime, queue requests offline and replay them on reconnect, and stay in full control of how and where your app talks to the network.
 
 ---
 
@@ -201,6 +199,10 @@ oda.setEngine(axiosEngine);
 - `OdaQueueError`: Thrown if you try to access `.data()` on a queued response.
 
 ---
+
+## 👨‍💻 Author
+
+Developed by **The Prince True-face** as part of the **ebinasoft** organization.
 
 ## 📜 License
 

@@ -1,7 +1,7 @@
 {
   "name": "oda",
   "version": "1.0.0",
-  "description": "A lightweight, type-safe, and offline-ready HTTP client",
+  "description": "A lightweight TypeScript HTTP client built around scoped, derivable clients. Swap the engine for any JS runtime, queue requests offline and replay them on reconnect.",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
   "types": "./dist/types/index.d.ts",
@@ -20,6 +20,7 @@
     "build": "node esbuild.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "example": "tsx examples/basic-usage.ts",
     "release": "release-it"
   },
   "keywords": [
@@ -29,11 +30,12 @@
     "typescript",
     "fetch"
   ],
-  "author": "",
+  "author": "The Prince True-face (ebinasoft)",
   "license": "ISC",
   "devDependencies": {
     "esbuild": "^0.28.0",
     "release-it": "^20.0.1",
+    "tsx": "^4.22.3",
     "typescript": "^5.4.5",
     "vitest": "^4.1.7"
   }
