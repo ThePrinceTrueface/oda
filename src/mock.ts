@@ -59,9 +59,9 @@ export type OdaMockRule = {
    * Supports exact strings and wildcards (*).
    *
    * @example
-   * "GET /users"         // exact
-   * "GET /users/*"       // wildcard — matches /users/1, /users/abc
-   * "DELETE /users/*/*"  // multi-wildcard
+   * "GET /users"          // exact
+   * "GET /users/{id}"     // wildcard example
+   * "DELETE /users/{id}"  // wildcard example
    */
   match: string;
   /**
