@@ -1,4 +1,4 @@
-import oda from '../src/index';
+import oda from "../src/index";
 
 // Simulation d'une API de placeholder
 const api = oda.http.client("https://jsonplaceholder.typicode.com");
@@ -22,10 +22,10 @@ async function demo() {
   const postsApi = api.derivate("/posts");
   const newPost = await postsApi.post("/", {
     body: {
-      title: 'Mon nouvel article',
-      body: 'Contenu de l\'article',
+      title: "Mon nouvel article",
+      body: "Contenu de l'article",
       userId: 1,
-    }
+    },
   });
 
   if (newPost.isSuccess()) {
