@@ -81,25 +81,6 @@ const client = oda.http.client("https://api.example.com", {
 
 ---
 
-**6. `oda.mock` — mocking intégré**
-
-Un engine de mock pour les tests — pas besoin de MSW ou de jest.mock.
-
-with possibility to make advenced configuration(latence, etc...)
-
-```typescript
-const mockEngine = oda.mock.engine([
-  { match: "GET /users",     respond: { data: [{ id: 1 }], status: 200 } },
-  { match: "POST /users",    respond: { data: { id: 2 },   status: 201 } },
-  { match: "GET /forbidden", respond: { status: 403 } },
-]);
-
-const client = oda.http.client("https://api.example.com", {
-  engine: mockEngine,
-});
-```
-
----
 
 **7. Pagination helper**
 
