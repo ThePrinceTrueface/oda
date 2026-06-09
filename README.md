@@ -36,12 +36,14 @@ console.log(res.data()) // → User[]
 9. [Query params](#9-query-params)
 10. [Timeout & cancellation](#10-timeout--cancellation)
 11. [Scope enforcement](#11-scope-enforcement)
-12. [Offline queue](#12-offline-queue)
-13. [Pluggable engine](#13-pluggable-engine)
-14. [Testing with `oda.mock`](#14-testing-with-odamock)
-15. [Error reference](#15-error-reference)
-16. [API reference](#16-api-reference)
-17. [Migrating from axios / fetch](#17-migrating-from-axios--fetch)
+12. [Response cache](#12-response-cache)
+13. [Offline queue](#13-offline-queue)
+14. [Pluggable engine](#14-pluggable-engine)
+15. [Custom storage — `OdaStorage`](#15-custom-storage--odastorage)
+16. [Testing with `oda.mock`](#16-testing-with-odamock)
+17. [Error reference](#17-error-reference)
+18. [API reference](#18-api-reference)
+19. [Migrating from axios / fetch](#19-migrating-from-axios--fetch)
 
 ---
 
@@ -468,7 +470,122 @@ const cdnClient = oda.http.client("https://cdn.example.com", {
 
 ---
 
-## 12. Offline queue
+## 12. Response cache
+
+oda caches GET responses automatically when a `cache` option is configured on the client. No manual wiring — just configure once, and every GET benefits.
+
+### Setup
+
+```typescript
+import oda from "oda"
+
+const client = oda.http.client("https://api.example.com", {
+  cache: {
+    ttl:     60_000,                                  // 60s time-to-live
+    storage: oda.helper.localStorage("api-cache"),    // persisted across reloads
+    key:     (req) => req.url,                        // default — can be customised
+  },
+})
+```
+
+### How it works
+
+```
+GET request
+  ↓
+Cache hit + TTL valid   → returned immediately, zero network call
+Cache hit + TTL expired → fresh fetch triggered
+  ↓ fetch OK  → cache updated → fresh data returned
+  ↓ fetch KO  → stale entry returned as fallback → res.isStale() === true
+Cache miss              → fetch → stored in cache if successful
+```
+
+### Detecting stale data
+
+When the network fails and oda falls back to an expired cache entry, `res.isStale()` returns `true`. Use it to inform the user.
+
+```typescript
+const res = await users.get<User[]>("/")
+
+if (res.isStale()) {
+  showBanner("You're seeing cached data — reconnecting…")
+}
+
+console.log(res.data()) // → User[] — available even when the network is down
+```
+
+### Bypassing the cache for a single request
+
+Force a fresh network call without disabling caching. The response is still written to the cache afterward — subsequent normal calls will benefit from it.
+
+```typescript
+// Always fetch fresh, but populate the cache for next time
+const res = await users.get<User[]>("/", {
+  config: { bypassCache: true },
+})
+```
+
+Typical use case: a "Refresh" button in the UI.
+
+```typescript
+async function onRefreshClick() {
+  const res = await users.get<User[]>("/", { config: { bypassCache: true } })
+  if (res.isSuccess()) setUsers(res.data())
+}
+```
+
+### Manual cache invalidation
+
+Invalidate entries after a mutation so the next read fetches fresh data.
+
+```typescript
+// Exact key
+await client.cache.invalidate("https://api.example.com/api/v1/users")
+
+// Wildcard — all entries matching the pattern
+await client.cache.invalidate("https://api.example.com/api/v1/users/*")
+
+// Clear everything
+await client.cache.clear()
+```
+
+Pattern after a mutation:
+
+```typescript
+const res = await users.post<User>("/", { body: newUser })
+if (res.isSuccess()) {
+  await client.cache.invalidate("/users") // next GET will be fresh
+}
+```
+
+### Custom cache key
+
+By default the cache key is the full URL. Override it to include auth context, locale, or any other dimension.
+
+```typescript
+cache: {
+  ttl: 30_000,
+  key: (req) => {
+    const url    = new URL(req.url)
+    const locale = req.headers["accept-language"] ?? "en"
+    return `${url.pathname}?${url.searchParams}&locale=${locale}`
+  },
+}
+```
+
+### Storage
+
+The `cache.storage` option accepts any `OdaStorage` implementation — the same interface used by the offline queue. See [section 15](#15-custom-storage--odastorage) for how to implement your own.
+
+| Backend | Setup | Persistence |
+|---------|-------|-------------|
+| In-memory (default) | No `storage` option needed | Cleared on page reload |
+| localStorage | `oda.helper.localStorage("key")` | Survives page reload |
+| Custom (Tauri, IndexedDB…) | Implement `OdaStorage` | Your choice |
+
+---
+
+## 13. Offline queue
 
 Mark individual requests as offline-capable with `config.offline: true`. If the device has no connectivity, the request is enqueued and replayed automatically at reconnection. Returns `{ queued: true }` immediately — the app stays responsive.
 
@@ -479,8 +596,8 @@ import oda from "oda"
 
 const client = oda.http.client("https://api.example.com", {
   offlineQueue: {
-    detector: oda.helper.browserOfflineDetector, // required
-    storage:  oda.helper.localStorage("main"),   // optional, defaults to in-memory
+    detector: oda.helper.browserOfflineDetector(), // required — factory call
+    storage:  oda.helper.localStorage("queue"),    // optional, defaults to in-memory
     onError:  (req, err) => console.error("Replay failed", req.id, err),
   },
 })
@@ -506,30 +623,15 @@ if (res.isInQueue()) {
 | Backend | Setup | Persistence |
 |---------|-------|-------------|
 | In-memory (default) | No config needed | Lost on app close |
-| `localStorage` | `oda.helper.localStorage("key")` | Survives refresh |
-| Custom (Tauri, IndexedDB…) | Implement `OdaQueueStore` | Your choice |
-
-### Custom storage — `OdaQueueStore`
-
-```typescript
-// tauri-plugin-store adapter
-const tauriStore: OdaQueueStore = {
-  async load(): Promise<OdaQueuedRequest[]> {
-    const store = await Store.load("oda-queue.json")
-    return (await store.get<OdaQueuedRequest[]>("queue")) ?? []
-  },
-  async save(queue: OdaQueuedRequest[]): Promise<void> {
-    const store = await Store.load("oda-queue.json")
-    await store.set("queue", queue)
-    await store.save()
-  },
-}
-```
+| `localStorage` | `oda.helper.localStorage("queue")` | Survives refresh |
+| Custom (Tauri, IndexedDB…) | Implement `OdaStorage` | Your choice |
 
 ### Custom detector — `OdaOfflineDetector`
 
+The detector is a factory — call it to get the `OdaOfflineDetector` oda needs.
+
 ```typescript
-// Node / Bun — never offline
+// Node / Bun — never offline (implement the interface directly)
 const nodeDetector: OdaOfflineDetector = {
   isOffline:   () => false,
   onReconnect: (_cb) => void 0,
@@ -546,7 +648,7 @@ const tauriDetector: OdaOfflineDetector = {
 
 ---
 
-## 13. Pluggable engine
+## 14. Pluggable engine
 
 The HTTP transport is an interface (`OdaEngine`) with a single `execute()` method. Swap it to target any runtime — without changing a line of app logic.
 
@@ -613,7 +715,126 @@ const axiosEngine: OdaEngine = {
 
 ---
 
-## 14. Testing with `oda.mock`
+## 15. Custom storage — `OdaStorage`
+
+`OdaStorage` is the single normalised storage interface used by all oda modules — the offline queue, the response cache, and any future persistence layer. Implement it once to plug any backend into everything.
+
+### The interface
+
+```typescript
+interface OdaStorage {
+  get(key: string): Promise<string | null>
+  set(key: string, value: string): Promise<void>
+  delete(key: string): Promise<void>
+  clear(): Promise<void>
+}
+```
+
+Values are always plain strings — each oda module handles its own JSON serialisation internally. The storage only stores and retrieves strings.
+
+### Helper pattern — all helpers are factories
+
+Every built-in helper follows the same pattern: a function you call with your parameters that returns the object oda needs internally. Your custom helpers should follow the same convention.
+
+```typescript
+// Built-in helpers — factory functions
+oda.helper.localStorage("users")       // (namespace) → OdaStorage
+oda.helper.browserOfflineDetector()    // () → OdaOfflineDetector
+
+// Your custom helper — same pattern
+function myTauriStorage(filename: string): OdaStorage {
+  return {
+    async get(key)        { ... },
+    async set(key, value) { ... },
+    async delete(key)     { ... },
+    async clear()         { ... },
+  }
+}
+
+function myNodeDetector(): OdaOfflineDetector {
+  return {
+    isOffline:   () => false,
+    onReconnect: (_cb) => void 0,
+  }
+}
+```
+
+### Example — tauri-plugin-store adapter
+
+```typescript
+import { Store } from "@tauri-apps/plugin-store"
+import type { OdaStorage } from "oda"
+
+function tauriStorage(filename: string): OdaStorage {
+  return {
+    async get(key) {
+      const store = await Store.load(filename)
+      return (await store.get<string>(key)) ?? null
+    },
+    async set(key, value) {
+      const store = await Store.load(filename)
+      await store.set(key, value)
+      await store.save()
+    },
+    async delete(key) {
+      const store = await Store.load(filename)
+      await store.delete(key)
+      await store.save()
+    },
+    async clear() {
+      const store = await Store.load(filename)
+      await store.clear()
+      await store.save()
+    },
+  }
+}
+
+// Usage — drop-in for any oda module
+const client = oda.http.client("https://api.example.com", {
+  offlineQueue: {
+    storage:  tauriStorage("oda-queue.json"),
+    detector: oda.helper.browserOfflineDetector(),
+  },
+  cache: {
+    ttl:     60_000,
+    storage: tauriStorage("oda-cache.json"),
+  },
+})
+```
+
+### Example — IndexedDB adapter
+
+```typescript
+function idbStorage(dbName: string): OdaStorage {
+  const open = () => new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(dbName, 1)
+    req.onupgradeneeded = () => req.result.createObjectStore("kv")
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+
+  const tx = async (mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest) => {
+    const db = await open()
+    return new Promise<unknown>((resolve, reject) => {
+      const store = db.transaction("kv", mode).objectStore("kv")
+      const req = fn(store)
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+  }
+
+  return {
+    get:    (key) => tx("readonly",  (s) => s.get(key)) as Promise<string | null>,
+    set:    (key, val) => tx("readwrite", (s) => s.put(val, key)).then(() => void 0),
+    delete: (key) => tx("readwrite", (s) => s.delete(key)).then(() => void 0),
+    clear:  () => tx("readwrite", (s) => s.clear()).then(() => void 0),
+  }
+}
+```
+
+---
+
+## 16. Testing with `oda.mock`
 
 `oda.mock` is a built-in mock engine designed to replace MSW, `nock`, or `jest.spyOn(fetch)` in unit and integration tests. No service workers, no configuration, no external dependencies.
 
@@ -755,7 +976,7 @@ describe("usersApi", () => {
 
 ---
 
-## 15. Error reference
+## 17. Error reference
 
 oda uses dedicated error classes so you can handle each failure mode precisely with `instanceof`.
 
@@ -793,7 +1014,7 @@ if (res.isError()) {
 
 ---
 
-## 16. API reference
+## 18. API reference
 
 ### `oda`
 
@@ -801,8 +1022,8 @@ if (res.isError()) {
 |--------|-----------|-------------|
 | `oda.http.client()` | `(url, options?) → OdaHttpClient` | Creates a root HTTP client |
 | `oda.mock.engine()` | `(rules, options?) → OdaMockEngine` | Creates a mock engine for testing |
-| `oda.helper.localStorage()` | `(namespace?) → OdaQueueStore` | localStorage-backed queue storage |
-| `oda.helper.browserOfflineDetector` | `OdaOfflineDetector` | Browser/Tauri connectivity detector |
+| `oda.helper.localStorage()` | `(namespace) → OdaStorage` | localStorage-backed storage (queue & cache) |
+| `oda.helper.browserOfflineDetector()` | `() → OdaOfflineDetector` | Browser/Tauri connectivity detector |
 | `oda.setEngine()` | `(engine) → void` | Sets the global HTTP engine |
 
 ### `OdaHttpClient`
@@ -810,11 +1031,13 @@ if (res.isError()) {
 | Method | Description |
 |--------|-------------|
 | `.derivate(path, options?)` | Creates a scoped child client |
-| `.get<T>(path, opts?)` | GET request |
+| `.get<T>(path, opts?)` | GET request — cached if client has `cache` configured |
 | `.post<T>(path, opts?)` | POST request |
 | `.put<T>(path, opts?)` | PUT request |
 | `.patch<T>(path, opts?)` | PATCH request |
 | `.delete<T>(path, opts?)` | DELETE request |
+| `.cache.invalidate(pattern?)` | Invalidates cache entries matching the pattern |
+| `.cache.clear()` | Clears the entire cache |
 
 ### `OdaResponse<T>`
 
@@ -823,10 +1046,30 @@ if (res.isError()) {
 | `.isSuccess()` | `boolean` | True on 2xx |
 | `.isError()` | `boolean` | True on failure |
 | `.isInQueue()` | `boolean` | True when queued |
-| `.data()` | `T \| unknown` | Response body or error body |
+| `.isStale()` | `boolean` | True when data comes from an expired cache fallback |
+| `.data()` | `T \| unknown` | Response body, error body, or throws `OdaQueueError` if queued |
 | `.error()` | `OdaHttpError \| OdaTimeoutError \| Error \| null` | Error object |
 | `.status()` | `number \| null` | HTTP status code |
 | `.headers()` | `Headers \| null` | Response headers |
+
+### `OdaConfig` (per-request)
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `timeout` | `number` | Per-request timeout in ms. Overrides client `defaultTimeout`. |
+| `signal` | `AbortSignal` | External abort signal — merged with internal timeout controller. |
+| `offline` | `boolean` | If true and offline, enqueues the request instead of sending. |
+| `bypassScope` | `boolean` | Allows request outside the client's URL scope. |
+| `bypassCache` | `boolean` | Skips cache read — always fetches fresh. Response is still cached. |
+
+### `OdaStorage`
+
+| Method | Description |
+|--------|-------------|
+| `.get(key)` | Returns the stored string value or `null` |
+| `.set(key, value)` | Stores a string value |
+| `.delete(key)` | Removes an entry |
+| `.clear()` | Removes all entries |
 
 ### `OdaMockEngine`
 
@@ -839,7 +1082,7 @@ if (res.isError()) {
 
 ---
 
-## 17. Migrating from axios / fetch
+## 19. Migrating from axios / fetch
 
 ### From fetch
 
