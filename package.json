@@ -2,6 +2,9 @@
   "name": "@oda-kit/client",
   "version": "1.2.0",
   "description": "A lightweight TypeScript HTTP client built around scoped, derivable clients. Swap the engine for any JS runtime, queue requests offline and replay them on reconnect.",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
   "types": "./dist/types/index.d.ts",
