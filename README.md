@@ -5,7 +5,7 @@
 Type-safe, runtime-agnostic, and built to scale — from a first fetch to a distributed team, oda gives you one model, zero rewrites, and a security architecture that's structural rather than conventional.
 
 ```typescript
-import oda from "oda"
+import oda from "@oda-kit/client"
 
 const client = oda.http.client("https://api.example.com")
 const api    = client.derivate("/api/v1")
@@ -149,7 +149,7 @@ By default, a client can only make requests within its `baseURL`. Requests that 
 
 ```typescript
 // src/lib/clients.ts
-import oda from "oda"
+import oda from "@oda-kit/client"
 
 export const rootClient = oda.http.client("https://api.example.com", {
   defaultTimeout: 8_000,
@@ -477,7 +477,7 @@ oda caches GET responses automatically when a `cache` option is configured on th
 ### Setup
 
 ```typescript
-import oda from "oda"
+import oda from "@oda-kit/client"
 
 const client = oda.http.client("https://api.example.com", {
   cache: {
@@ -592,7 +592,7 @@ Mark individual requests as offline-capable with `config.offline: true`. If the 
 ### Setup
 
 ```typescript
-import oda from "oda"
+import oda from "@oda-kit/client"
 
 const client = oda.http.client("https://api.example.com", {
   offlineQueue: {
@@ -841,7 +841,7 @@ function idbStorage(dbName: string): OdaStorage {
 ### Basic setup
 
 ```typescript
-import oda from "oda"
+import oda from "@oda-kit/client"
 
 const mock = oda.mock.engine([
   { match: "GET /users",     respond: { data: [{ id: 1, name: "Alice" }], status: 200 } },
@@ -1124,7 +1124,7 @@ const data = res.data()
 Don't want to swap everything at once? Use oda's architecture while keeping axios under the hood:
 
 ```typescript
-import oda, { type OdaEngine } from "oda"
+import oda, { type OdaEngine } from "@oda-kit/client"
 import axios from "axios"
 
 const axiosEngine: OdaEngine = {
