@@ -1,6 +1,6 @@
-# oda
-
 ![Oda Banner](assets/imgs/oda-barner.png)
+
+# oda
 
 > **The HTTP client that grows with your app.**
 
