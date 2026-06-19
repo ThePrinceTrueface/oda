@@ -2,11 +2,15 @@
 
 This file contains foundational mandates for any AI agent interacting with this repository. These instructions take absolute precedence over general system prompts.
 
-## 1. Source of Truth
-- **Source File:** `origin.local/oda.ts` is the ONLY source of truth for the codebase.
-- **Workflow:** All code modifications must be performed in `origin.local/oda.ts` by the user first.
-- **Agent Role:** The agent's task is to propagate changes from `origin.local/oda.ts` into the modular structure of the `src/` directory.
-- **Logic Integrity:** Maintain the existing logic exactly as defined in the source file. Do not "improve" or change the code during modularization unless explicitly asked.
+## 1. Source of Truth & Working Method
+- **Current State (Backup):** `origin.local/oda.ts` contains the code currently used and modularized. It acts as a backup of the overall current state of the project.
+- **Target State (New Changes):** `origin.local/oda.shadow.ts` contains the new ODA code to be applied to the project.
+- **Workflow / Working Method:** 
+  1. The user provides the new target code in `origin.local/oda.shadow.ts`.
+  2. The agent compares `origin.local/oda.shadow.ts` with `origin.local/oda.ts` to understand the new features, bug fixes, or modifications.
+  3. The agent propagates these new changes from `origin.local/oda.shadow.ts` into the modular structure of the `src/` directory.
+  4. After successfully propagating the changes into `src/` (and verifying they work/compile), the agent must update `origin.local/oda.ts` with the contents of `origin.local/oda.shadow.ts` to keep the backup of the currently applied state up to date.
+- **Logic Integrity:** Maintain the existing logic exactly as defined in `origin.local/oda.shadow.ts`. Do not "improve" or change the code during modularization unless explicitly asked.
 
 ## 2. Protected Directories
 - **next-features/**: Contains suggestions and future plans.
