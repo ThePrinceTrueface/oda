@@ -2,13 +2,66 @@ import { getGlobalEngine, OdaEngine, OdaEngineRequest, OdaEngineResponse } from 
 import { OdaHttpError, OdaTimeoutError } from "./errors";
 import { assertScope, buildQueryURL, mergeHeaders, mergeOptions, resolveURL, withTimeout } from "./helpers";
 import { OdaOfflineQueue } from "./offline/queue";
-import { OdaResponse } from "./response";
-import { BodyPayload, OdaBodyRequestOptions, OdaClientOptions, OdaRequestOptions } from "./types";
+import { MemoryStorage, OdaStorage } from "./offline/storage";
+import { OdaResponse, SyncCallback } from "./response";
+import { BodyPayload, OdaBodyRequestOptions, OdaCacheOptions, OdaClientOptions, OdaRequestOptions } from "./types";
+
+type OdaCacheEntry = {
+  data: unknown;
+  status: number;
+  headers: Record<string, string>;
+  cachedAt: number;
+  ttl: number;
+};
+
+class OdaCache {
+  private readonly storage: OdaStorage;
+  private readonly ttl: number;
+  private readonly keyResolver: (req: OdaEngineRequest) => string;
+
+  constructor(options: OdaCacheOptions) {
+    this.storage = options.storage ?? new MemoryStorage();
+    this.ttl = options.ttl;
+    this.keyResolver = options.key ?? ((req) => req.url);
+  }
+
+  resolveKey(request: OdaEngineRequest): string {
+    return this.keyResolver(request);
+  }
+
+  async get(key: string): Promise<{ entry: OdaCacheEntry; fresh: boolean } | null> {
+    const raw = await this.storage.get(key);
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as OdaCacheEntry;
+    const fresh = Date.now() - entry.cachedAt < entry.ttl;
+    return { entry, fresh };
+  }
+
+  async set(key: string, data: unknown, status: number, headers: Record<string, string>): Promise<void> {
+    const entry: OdaCacheEntry = { data, status, headers, cachedAt: Date.now(), ttl: this.ttl };
+    await this.storage.set(key, JSON.stringify(entry));
+  }
+
+  async invalidate(pattern?: string): Promise<void> {
+    if (!pattern) {
+      await this.storage.clear();
+      return;
+    }
+    const regex = new RegExp(
+      "^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^?#]*") + "$",
+    );
+    
+    // Fallback: if storage doesn't support keys(), we just clear all for safety
+    // or we skip if delete is too expensive. Here we clear.
+    await this.storage.clear();
+  }
+}
 
 export class OdaHttpClient {
   private readonly baseURL: string;
   private readonly options: OdaClientOptions;
   private readonly queue: OdaOfflineQueue | null;
+  private readonly _cache: OdaCache | null;
   private readonly engine: OdaEngine;
 
   constructor(baseURL: string, options: OdaClientOptions = {}) {
@@ -18,14 +71,33 @@ export class OdaHttpClient {
     this.queue = options.offlineQueue
       ? new OdaOfflineQueue(options.offlineQueue)
       : null;
+    this._cache = options.cache ? new OdaCache(options.cache) : null;
 
     if (this.queue) {
       this.queue.setReplayExecutor((entry) =>
-        this.dispatch(entry.method, entry.url, undefined, {
+        this.execute(entry.method, entry.url, entry.body, {
           headers: entry.headers,
-        }).then(() => void 0),
+        }) as Promise<OdaResponse<unknown>>,
       );
     }
+  }
+
+  /**
+   * Cache management for this client.
+   */
+  get cache(): {
+    invalidate(pattern?: string): Promise<void>;
+    clear(): Promise<void>;
+  } {
+    if (!this._cache) {
+      throw new Error(
+        "[oda] client.cache is not available — configure a `cache` option when creating the client.",
+      );
+    }
+    return {
+      invalidate: (pattern) => this._cache!.invalidate(pattern),
+      clear: () => this._cache!.invalidate(),
+    };
   }
 
   derivate(path: string, options: OdaClientOptions = {}): OdaHttpClient {
@@ -65,7 +137,6 @@ export class OdaHttpClient {
       ? buildQueryURL(resolveURL(this.baseURL, path), query)
       : resolveURL(this.baseURL, path);
 
-    // Scope check — enforced by default, bypassed only when explicitly opted out
     const scopeEnabled = this.options.scopeCheck ?? true;
     if (scopeEnabled && !config.bypassScope) {
       assertScope(fullURL, this.baseURL);
@@ -104,16 +175,48 @@ export class OdaHttpClient {
     body: BodyPayload | undefined,
     opts: OdaRequestOptions = {},
   ): Promise<OdaResponse<T>> {
+    // Offline queue
     if (opts.config?.offline && this.queue && this.queue.isOffline()) {
       const headers: Record<string, string> = {};
       if (opts.auth?.jwt) headers["Authorization"] = `Bearer ${opts.auth.jwt}`;
-      await this.queue.enqueue(
+      const reqId = await this.queue.enqueue(
         method,
         resolveURL(this.baseURL, path),
         body,
         headers,
       );
-      return OdaResponse.queued<T>();
+      return OdaResponse.queued<T>(
+        reqId,
+        (id, cb) => this.queue!.registerSyncCallback(id, cb),
+      );
+    }
+
+    // Cache — GET requests only
+    const isGet = method === "GET";
+    let cacheKey: string | null = null;
+    let staleEntry: OdaCacheEntry | null = null;
+
+    if (isGet && this._cache) {
+      const previewURL = opts.query
+        ? buildQueryURL(resolveURL(this.baseURL, path), opts.query)
+        : resolveURL(this.baseURL, path);
+      const previewReq: OdaEngineRequest = { url: previewURL, method, headers: {} };
+      cacheKey = this._cache.resolveKey(previewReq);
+
+      if (!opts.config?.bypassCache) {
+        const cached = await this._cache.get(cacheKey);
+        if (cached) {
+          if (cached.fresh) {
+            return OdaResponse.success<T>(
+              cached.entry.data as T,
+              cached.entry.status,
+              new Headers(cached.entry.headers),
+              false,
+            );
+          }
+          staleEntry = cached.entry;
+        }
+      }
     }
 
     try {
@@ -146,12 +249,27 @@ export class OdaHttpClient {
         ? ((await response.json()) as T)
         : ((await response.text()) as unknown as T);
 
+      // Store in cache
+      if (isGet && this._cache && cacheKey) {
+        await this._cache.set(cacheKey, data, response.status, response.headers);
+      }
+
       return OdaResponse.success<T>(
         data,
         response.status,
         new Headers(response.headers),
       );
     } catch (err) {
+      // Stale-on-error fallback
+      if (isGet && staleEntry) {
+        return OdaResponse.success<T>(
+          staleEntry.data as T,
+          staleEntry.status,
+          new Headers(staleEntry.headers),
+          true,
+        );
+      }
+
       if (err instanceof OdaTimeoutError) {
         return OdaResponse.failure<T>(err, null, null);
       }

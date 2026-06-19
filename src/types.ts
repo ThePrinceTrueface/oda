@@ -26,6 +26,12 @@ export type OdaConfig = {
    * apiClient.post(uploadUrl, { body: file }, { config: { bypassScope: true } });
    */
   bypassScope?: boolean;
+  /**
+   * When true, skips the cache read for this request — a fresh network call is
+   * always made regardless of TTL. The response is still written to the cache
+   * afterward if the client has caching enabled.
+   */
+  bypassCache?: boolean;
 };
 
 /** Options accepted by every HTTP method. */
@@ -41,6 +47,26 @@ export type OdaBodyRequestOptions = OdaRequestOptions & {
   body?: BodyPayload;
 };
 
+export type OdaCacheOptions = {
+  /**
+   * Time-to-live in milliseconds.
+   * After expiry, a fresh fetch is triggered. If the fetch fails, the stale
+   * entry is returned as a fallback with `res.isStale() === true`.
+   */
+  ttl: number;
+  /**
+   * Storage backend for cached responses.
+   * Defaults to in-memory (cleared on page reload).
+   */
+  storage?: import("./offline/storage").OdaStorage;
+  /**
+   * Custom cache key resolver.
+   * Receives the engine request and returns a string key.
+   * Defaults to the full request URL.
+   */
+  key?: (req: import("./engine").OdaEngineRequest) => string;
+};
+
 /** Client-level configuration. */
 export type OdaClientOptions = {
   defaultTimeout?: number;
@@ -54,12 +80,10 @@ export type OdaClientOptions = {
   /**
    * When false, disables scope enforcement for all requests on this client.
    * Defaults to true — all requests must stay within the client's baseURL.
-   *
-   * @example
-   * // Client that may call any domain (e.g. a CDN proxy client)
-   * const cdnClient = oda.http.client("https://cdn.example.com", {
-   *   scopeCheck: false,
-   * });
    */
   scopeCheck?: boolean;
+  /**
+   * Response cache for GET requests.
+   */
+  cache?: OdaCacheOptions;
 };

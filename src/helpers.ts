@@ -64,5 +64,6 @@ export function mergeOptions(
     offlineQueue: child.offlineQueue ?? parent.offlineQueue,
     engine: child.engine ?? parent.engine,
     scopeCheck: child.scopeCheck ?? parent.scopeCheck ?? true,
+    cache: child.cache ?? parent.cache,
   };
 }

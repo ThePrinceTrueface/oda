@@ -1,5 +1,7 @@
 import { BodyPayload } from "../types";
 import { OdaOfflineDetector } from "./detector";
+import { OdaStorage, MemoryStorage } from "./storage";
+import { OdaResponse, SyncCallback } from "../response";
 
 /** Serialisable snapshot of a request to be replayed later. */
 export type OdaQueuedRequest = {
@@ -11,54 +13,75 @@ export type OdaQueuedRequest = {
   enqueuedAt: number;
 };
 
-/**
- * Pluggable storage backend for the offline queue.
- */
-export interface OdaQueueStore {
-  load(): Promise<OdaQueuedRequest[]>;
-  save(queue: OdaQueuedRequest[]): Promise<void>;
-}
-
 export type OdaOfflineQueueOptions = {
-  /** Storage backend. Defaults to in-memory. */
-  storage?: OdaQueueStore;
-  /** Connectivity detector — required. */
+  /**
+   * Storage backend for the offline queue.
+   * Defaults to in-memory (lost on page reload).
+   */
+  storage?: OdaStorage;
+  /**
+   * Connectivity detector — required.
+   */
   detector: OdaOfflineDetector;
-  /** Called when replaying a queued request fails after reconnection. */
+  /**
+   * Called when replaying a queued request fails after reconnection.
+   */
   onError?: (request: OdaQueuedRequest, error: unknown) => void;
+  /**
+   * Called after a successful flush.
+   */
+  onSync?: (replayed: number) => void;
 };
 
-class MemoryQueueStore implements OdaQueueStore {
-  private data: OdaQueuedRequest[] = [];
-  async load() {
-    return [...this.data];
-  }
-  async save(queue: OdaQueuedRequest[]) {
-    this.data = [...queue];
-  }
-}
-
 export class OdaOfflineQueue {
-  private readonly store: OdaQueueStore;
+  private readonly storage: OdaStorage;
   private readonly detector: OdaOfflineDetector;
   private readonly onError: OdaOfflineQueueOptions["onError"];
+  private readonly onSync: OdaOfflineQueueOptions["onSync"];
   private replaying = false;
-  private replayExecutor: ((entry: OdaQueuedRequest) => Promise<void>) | null =
-    null;
+  private replayExecutor: ((entry: OdaQueuedRequest) => Promise<OdaResponse<unknown>>) | null = null;
+
+  /** Per-request sync callbacks registered via res.onSync() — in-memory only. */
+  private readonly syncRegistry = new Map<string, SyncCallback<unknown>>();
+
+  private static readonly KEY = "queue";
 
   constructor(options: OdaOfflineQueueOptions) {
-    this.store = options.storage ?? new MemoryQueueStore();
+    this.storage = options.storage ?? new MemoryStorage();
     this.detector = options.detector;
     this.onError = options.onError;
+    this.onSync = options.onSync;
+
     this.detector.onReconnect(() => this.flush());
+    this.flushOnMount();
   }
 
-  isOffline(): boolean {
-    return this.detector.isOffline();
+  isOffline(): boolean { return this.detector.isOffline(); }
+
+  registerSyncCallback(id: string, cb: SyncCallback<unknown>): void {
+    this.syncRegistry.set(id, cb);
   }
 
-  setReplayExecutor(fn: (entry: OdaQueuedRequest) => Promise<void>): void {
+  setReplayExecutor(fn: (entry: OdaQueuedRequest) => Promise<OdaResponse<unknown>>): void {
     this.replayExecutor = fn;
+  }
+
+  private async flushOnMount(): Promise<void> {
+    if (this.detector.isOffline()) return;
+
+    const queue = await this.loadQueue();
+    if (queue.length === 0) return;
+
+    setTimeout(() => this.flush(), 0);
+  }
+
+  private async loadQueue(): Promise<OdaQueuedRequest[]> {
+    const raw = await this.storage.get(OdaOfflineQueue.KEY);
+    return raw ? (JSON.parse(raw) as OdaQueuedRequest[]) : [];
+  }
+
+  private async saveQueue(queue: OdaQueuedRequest[]): Promise<void> {
+    await this.storage.set(OdaOfflineQueue.KEY, JSON.stringify(queue));
   }
 
   async enqueue(
@@ -67,17 +90,14 @@ export class OdaOfflineQueue {
     body: BodyPayload | undefined,
     headers: Record<string, string>,
   ): Promise<string> {
-    const queue = await this.store.load();
+    const queue = await this.loadQueue();
     const entry: OdaQueuedRequest = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      method,
-      url,
-      body,
-      headers,
+      method, url, body, headers,
       enqueuedAt: Date.now(),
     };
     queue.push(entry);
-    await this.store.save(queue);
+    await this.saveQueue(queue);
     return entry.id;
   }
 
@@ -86,19 +106,37 @@ export class OdaOfflineQueue {
     this.replaying = true;
 
     try {
-      const queue = await this.store.load();
+      const queue = await this.loadQueue();
       const remaining: OdaQueuedRequest[] = [];
 
       for (const entry of queue) {
         try {
-          await this.replayExecutor(entry);
+          const replayedRes = await this.replayExecutor(entry);
+
+          const cb = this.syncRegistry.get(entry.id);
+          if (cb) {
+            cb(replayedRes);
+            this.syncRegistry.delete(entry.id);
+          }
+
         } catch (error) {
+          const cb = this.syncRegistry.get(entry.id);
+          if (cb) {
+            cb(OdaResponse.failure(error as Error, null, null));
+            this.syncRegistry.delete(entry.id);
+          }
+
           this.onError?.(entry, error);
           remaining.push(entry);
         }
       }
 
-      await this.store.save(remaining);
+      await this.saveQueue(remaining);
+
+      const replayed = queue.length - remaining.length;
+      if (replayed > 0) {
+        this.onSync?.(replayed);
+      }
     } finally {
       this.replaying = false;
     }

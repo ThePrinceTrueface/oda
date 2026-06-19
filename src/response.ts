@@ -1,14 +1,21 @@
 import { OdaHttpError, OdaQueueError, OdaTimeoutError } from "./errors";
 
-type OdaResponseState<T> =
-  | { kind: "success"; data: T; status: number; headers: Headers }
+export type OdaResponseState<T> =
+  | { kind: "success"; data: T; status: number; headers: Headers; stale: boolean }
   | {
       kind: "error";
       error: OdaHttpError | OdaTimeoutError | Error;
       status: number | null;
       headers: Headers | null;
     }
-  | { kind: "queued" };
+  | {
+      kind: "queued";
+      reqId: string;
+      registerCallback: (id: string, cb: SyncCallback<unknown>) => void;
+    };
+
+/** Callback type for res.onSync() — receives the replayed OdaResponse. */
+export type SyncCallback<T> = (res: OdaResponse<T>) => void;
 
 /**
  * Wraps every HTTP response in a Result-style container.
@@ -19,8 +26,13 @@ export class OdaResponse<T> {
 
   // ── Static constructors ───────────────────────────────────────────────────
 
-  static success<T>(data: T, status: number, headers: Headers): OdaResponse<T> {
-    return new OdaResponse<T>({ kind: "success", data, status, headers });
+  static success<T>(
+    data: T,
+    status: number,
+    headers: Headers,
+    stale = false,
+  ): OdaResponse<T> {
+    return new OdaResponse<T>({ kind: "success", data, status, headers, stale });
   }
 
   static failure<T>(
@@ -31,8 +43,11 @@ export class OdaResponse<T> {
     return new OdaResponse<T>({ kind: "error", error, status, headers });
   }
 
-  static queued<T>(): OdaResponse<T> {
-    return new OdaResponse<T>({ kind: "queued" });
+  static queued<T>(
+    reqId: string,
+    registerCallback: (id: string, cb: SyncCallback<unknown>) => void,
+  ): OdaResponse<T> {
+    return new OdaResponse<T>({ kind: "queued", reqId, registerCallback });
   }
 
   // ── Accessors ─────────────────────────────────────────────────────────────
@@ -53,10 +68,30 @@ export class OdaResponse<T> {
   }
 
   /**
+   * Returns true when the data comes from an expired cache entry used as
+   * a fallback after a failed network request (stale-on-error).
+   * Always false on fresh responses or errors.
+   */
+  isStale(): boolean {
+    return this.state.kind === "success" && this.state.stale;
+  }
+
+  /**
+   * Registers a callback to be called when this queued request is replayed
+   * after reconnection. The callback receives the full `OdaResponse<T>` of
+   * the replayed request — success or error.
+   */
+  onSync(callback: (res: OdaResponse<T>) => void): this {
+    if (this.state.kind !== "queued") return this;
+    this.state.registerCallback(
+      this.state.reqId,
+      callback as SyncCallback<unknown>,
+    );
+    return this;
+  }
+
+  /**
    * Returns the parsed response body.
-   * - On success  → T
-   * - On error    → the error body if HTTP (may be null), null for timeout/abort
-   * - In queue    → throws OdaQueueError (no data exists yet)
    */
   data(): T | unknown {
     if (this.state.kind === "queued") {
@@ -70,28 +105,16 @@ export class OdaResponse<T> {
     return this.state.data;
   }
 
-  /**
-   * Returns the error that caused the failure.
-   * Returns null if the request succeeded or is queued.
-   */
   error(): OdaHttpError | OdaTimeoutError | Error | null {
     if (this.state.kind === "error") return this.state.error;
     return null;
   }
 
-  /**
-   * Returns the HTTP status code.
-   * Returns null if the request is queued or failed before receiving a response.
-   */
   status(): number | null {
     if (this.state.kind === "queued") return null;
     return this.state.status;
   }
 
-  /**
-   * Returns the response headers.
-   * Returns null if the request is queued or failed before receiving a response.
-   */
   headers(): Headers | null {
     if (this.state.kind === "queued") return null;
     return this.state.headers;

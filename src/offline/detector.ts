@@ -11,9 +11,11 @@ export interface OdaOfflineDetector {
 }
 
 /**
- * Built-in detector for browser and Tauri environments.
+ * Built-in detector factory for browser and Tauri environments.
  */
-export const browserOfflineDetector: OdaOfflineDetector = {
-  isOffline: () => !navigator.onLine,
-  onReconnect: (cb) => window.addEventListener("online", cb),
-};
+export function browserOfflineDetector(): OdaOfflineDetector {
+  return {
+    isOffline: () => !navigator.onLine,
+    onReconnect: (cb) => window.addEventListener("online", cb),
+  };
+}
